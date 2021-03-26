@@ -17,8 +17,13 @@ const { getQuotas, findProjectByNamespace } = require('../cache')
 
 const { UnprocessableEntity } = createError
 
-function fromResource ({ secretBinding, cloudProviderKind, secret, quotas = [], projectName, hasCostObject }) {
+function fromResource ({ secretBinding, cloudProviderKind, secretTypes, secret, quotas = [], projectName, hasCostObject }) {
   const cloudProfileName = secretBinding.metadata.labels['cloudprofile.garden.sapcloud.io/name']
+  if (_.isEmpty(secretTypes)) {
+    secretTypes = ['infra']
+  } else {
+    secretTypes = JSON.parse(secretTypes)
+  }
 
   const { metadata: { namespace, name }, secretRef } = secretBinding
   const infrastructureSecret = {
@@ -27,6 +32,7 @@ function fromResource ({ secretBinding, cloudProviderKind, secret, quotas = [], 
       name,
       secretRef,
       cloudProviderKind,
+      secretTypes,
       cloudProfileName,
       projectName,
       hasCostObject
@@ -91,11 +97,14 @@ function toSecretBindingResource ({ metadata }) {
   const labels = {
     'cloudprofile.garden.sapcloud.io/name': metadata.cloudProfileName
   }
+  const annotations = {
+    'gardener.cloud/secretTypes': JSON.stringify(metadata.secretTypes)
+  }
 
   metadata = _
     .chain(metadata)
     .pick(['namespace'])
-    .assign({ name, labels })
+    .assign({ name, labels, annotations })
     .value()
   return { apiVersion, kind, metadata, secretRef }
 }
@@ -122,6 +131,7 @@ async function getInfrastructureSecrets ({ secretBindings, cloudProfileList, sec
         const cloudProfileName = _.get(secretBinding, ['metadata', 'labels', 'cloudprofile.garden.sapcloud.io/name'])
         const cloudProfile = _.find(cloudProfileList, ['metadata.name', cloudProfileName])
         const cloudProviderKind = _.get(cloudProfile, 'metadata.cloudProviderKind')
+        const secretTypes = _.get(secretBinding, ['metadata', 'annotations', 'gardener.cloud/secretTypes'])
         const name = _.get(secretBinding, 'metadata.name')
         const secretName = _.get(secretBinding, 'secretRef.name')
         const secretNamespace = _.get(secretBinding, 'secretRef.namespace', namespace)
@@ -136,6 +146,7 @@ async function getInfrastructureSecrets ({ secretBindings, cloudProfileList, sec
         return fromResource({
           secretBinding,
           cloudProviderKind,
+          secretTypes,
           secret,
           quotas: resolveQuotas(secretBinding),
           ...projectInfo
@@ -202,14 +213,16 @@ exports.create = async function ({ user, namespace, body }) {
 
   const secretBinding = await client['core.gardener.cloud'].secretbindings.create(namespace, toSecretBindingResource(body))
 
-  const cloudProfileName = _.get(secretBinding, 'metadata.labels["cloudprofile.garden.sapcloud.io/name"]')
+  const cloudProfileName = _.get(secretBinding, ['metadata', 'labels', 'cloudprofile.garden.sapcloud.io/name'])
   const cloudProviderKind = await getCloudProviderKind(user, cloudProfileName)
+  const secretTypes = _.get(secretBinding, ['metadata', 'annotations', 'gardener.cloud/secretTypes'])
   const projectInfo = getProjectNameAndHasCostObject(namespace)
 
   return fromResource({
     secretBinding,
     secret,
     cloudProviderKind,
+    secretTypes,
     quotas: resolveQuotas(secretBinding),
     ...projectInfo
   })
@@ -222,7 +235,7 @@ function isOwnSecret ({ metadata, secretRef }) {
 exports.patch = async function ({ user, namespace, name, body }) {
   const client = user.client
 
-  const secretBinding = await client['core.gardener.cloud'].secretbindings.get(namespace, name)
+  let secretBinding = await client['core.gardener.cloud'].secretbindings.get(namespace, name)
 
   if (!isOwnSecret(secretBinding)) {
     throw createError(422, 'Patch allowed only for secrets in own namespace')
@@ -232,14 +245,18 @@ exports.patch = async function ({ user, namespace, name, body }) {
   _.set(body, 'metadata.secretRef', secretRef)
   const secret = await client.core.secrets.mergePatch(secretRef.namespace, secretRef.name, toSecretResource(body))
 
-  const cloudProfileName = _.get(secretBinding, 'metadata.labels["cloudprofile.garden.sapcloud.io/name"]')
+  secretBinding = await client['core.gardener.cloud'].secretbindings.mergePatch(namespace, name, toSecretBindingResource(body))
+
+  const cloudProfileName = _.get(secretBinding, ['metadata', 'labels', 'cloudprofile.garden.sapcloud.io/name'])
   const cloudProviderKind = await getCloudProviderKind(user, cloudProfileName)
+  const secretTypes = _.get(secretBinding, ['metadata', 'annotations', 'gardener.cloud/secretTypes'])
   const projectInfo = getProjectNameAndHasCostObject(secretRef.namespace)
 
   return fromResource({
     secretBinding,
     secret,
     cloudProviderKind,
+    secretTypes,
     quotas: resolveQuotas(secretBinding),
     ...projectInfo
   })

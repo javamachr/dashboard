@@ -295,6 +295,19 @@ export function isOwnSecret (infrastructureSecret) {
   return get(infrastructureSecret, 'metadata.secretRef.namespace') === get(infrastructureSecret, 'metadata.namespace')
 }
 
+export function suppportedSecretTypesForCloudProviderKind (cloudProviderKind) {
+  switch (cloudProviderKind) {
+    case 'cloudflare':
+      return ['dns']
+    case 'infoblox':
+      return ['dns']
+    case 'netlify':
+      return ['dns']
+    default:
+      return ['infra', 'dns']
+  }
+}
+
 const availableK8sUpdatesCache = {}
 export function availableK8sUpdatesForShoot (shootVersion, cloudProfileName) {
   let newerVersions = get(availableK8sUpdatesCache, `${shootVersion}_${cloudProfileName}`)

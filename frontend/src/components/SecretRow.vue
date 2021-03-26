@@ -17,6 +17,13 @@ SPDX-License-Identifier: Apache-2.0
         </v-tooltip>
       </div>
     </td>
+    <td v-if="selectedHeaders.types">
+      <div class="d-flex">
+        <v-chip v-for="(type, index) in item.types" :key="type" small color="action-button" outlined :class="{'mr-3': index < type.length}">
+          {{type}}
+        </v-chip>
+      </div>
+    </td>
     <td v-if="selectedHeaders.infrastructure">
       <vendor extended :cloud-provider-kind="item.infrastructureName" :cloud-profile-name="item.cloudProfileName"></vendor>
     </td>

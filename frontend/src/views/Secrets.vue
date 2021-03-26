@@ -184,6 +184,13 @@ export default {
           defaultSelected: true
         },
         {
+          text: 'TYPE',
+          align: 'start',
+          value: 'types',
+          sortable: true,
+          defaultSelected: true
+        },
+        {
           text: 'INFRASTRUCTURE',
           align: 'start',
           value: 'infrastructure',
@@ -223,6 +230,7 @@ export default {
     secretList () {
       return map(this.infrastructureSecretList, secret => ({
         name: secret.metadata.name,
+        types: secret.metadata.secretTypes,
         isOwnSecret: isOwnSecret(secret),
         ownerNamespace: secret.metadata.secretRef.namespace,
         infrastructure: `${secret.metadata.cloudProviderKind}--${secret.metadata.cloudProfileName}`,

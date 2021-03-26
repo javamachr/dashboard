@@ -15,12 +15,21 @@ SPDX-License-Identifier: Apache-2.0
     replace-title="Replace OpenStack Secret"
     @input="onInput">
 
-    <template v-slot:secret-slot>
+    <template v-slot:secret-slot="slotParams">
+      <div v-if="authURLRequired(slotParams.secretTypes)">
+        <v-text-field
+          color="primary"
+          v-model="authURL"
+          label="Auth URL"
+          :error-messages="getErrorMessages('authURL')"
+          @input="$v.authURL.$touch()"
+          @blur="$v.authURL.$touch()"
+        ></v-text-field>
+      </div>
       <div>
         <v-text-field
           color="primary"
           v-model="domainName"
-          ref="domainName"
           label="Domain Name"
           :error-messages="getErrorMessages('domainName')"
           @input="$v.domainName.$touch()"
@@ -93,9 +102,10 @@ SPDX-License-Identifier: Apache-2.0
 <script>
 import { mapGetters } from 'vuex'
 import SecretDialog from '@/components/dialogs/SecretDialog'
-import { required } from 'vuelidate/lib/validators'
+import { required, requiredIf } from 'vuelidate/lib/validators'
 import { getValidationErrors, setDelayedInputFocus } from '@/utils'
 import HintColorizer from '@/components/HintColorizer'
+import includes from 'lodash/includes'
 
 const validationErrors = {
   domainName: {
@@ -109,6 +119,9 @@ const validationErrors = {
   },
   password: {
     required: 'You can\'t leave this empty.'
+  },
+  authURL: {
+    required: 'Required for Secret Type DNS.'
   }
 }
 
@@ -133,6 +146,8 @@ export default {
       username: undefined,
       password: undefined,
       hideSecret: true,
+      authURL: undefined,
+      isAuthURLRequired: false,
       validationErrors
     }
   },
@@ -148,12 +163,16 @@ export default {
       return !this.$v.$invalid
     },
     secretData () {
-      return {
+      const data = {
         domainName: this.domainName,
         tenantName: this.tenantName,
         username: this.username,
         password: this.password
       }
+      if (this.authURL && this.authURL.length) {
+        data.OS_AUTH_URL = this.authURL
+      }
+      return data
     },
     validators () {
       const validators = {
@@ -168,6 +187,11 @@ export default {
         },
         password: {
           required
+        },
+        authURL: {
+          required: requiredIf(function () {
+            return this.isAuthURLRequired
+          })
         }
       }
       return validators
@@ -187,6 +211,7 @@ export default {
       this.tenantName = ''
       this.username = ''
       this.password = ''
+      this.authURL = ''
 
       if (!this.isCreateMode) {
         if (this.secret.data) {
@@ -198,6 +223,10 @@ export default {
     },
     getErrorMessages (field) {
       return getValidationErrors(this, field)
+    },
+    authURLRequired (secretTypes) {
+      this.isAuthURLRequired = includes(secretTypes, 'dns')
+      return this.isAuthURLRequired
     }
   },
   watch: {

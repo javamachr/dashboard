@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
  -->
 
 <template>
-  <v-dialog v-model="visible" max-width="850">
+  <v-dialog v-model="visible" max-width="850" persistent>
     <v-card>
       <v-card-title class="toolbar-background">
         <span class="headline toolbar-title--text">{{title}}</span>
@@ -37,8 +37,27 @@ SPDX-License-Identifier: Apache-2.0
               <template v-else>
                 <div class="title pb-4">{{name}}</div>
               </template>
-              </div>
-
+            </div>
+            <div>
+             <v-select
+                color="primary"
+                item-color="primary"
+                label="Secret Type"
+                :items="secretTypeItems"
+                multiple
+                small-chips
+                v-model="secretTypes"
+                :error-messages="getErrorMessages('secretTypes')"
+                @input="$v.secretTypes.$touch()"
+                persistent-hint
+                >
+                <template v-slot:selection="{ item, index }">
+                  <v-chip small color="primary" outlined close @update:active="secretTypes.splice(index, 1); $v.secretTypes.$touch()">
+                    <span>{{ item }}</span>
+                  </v-chip>
+                </template>
+              </v-select>
+            </div>
             <div v-show="cloudProfiles.length !== 1">
               <cloud-profile
                 ref="cloudProfile"
@@ -48,7 +67,7 @@ SPDX-License-Identifier: Apache-2.0
               </cloud-profile>
             </div>
 
-            <slot name="secret-slot"></slot>
+            <slot name="secret-slot" :secretTypes="secretTypes"></slot>
             <g-message color="error" :message.sync="errorMessage" :detailed-message.sync="detailedErrorMessage"></g-message>
           </div>
           <v-slide-x-reverse-transition>
@@ -75,7 +94,7 @@ SPDX-License-Identifier: Apache-2.0
 import { mapActions, mapState, mapGetters } from 'vuex'
 import { required, maxLength } from 'vuelidate/lib/validators'
 import { unique, resourceName } from '@/utils/validators'
-import { getValidationErrors, setDelayedInputFocus, setInputFocus } from '@/utils'
+import { getValidationErrors, setDelayedInputFocus, setInputFocus, suppportedSecretTypesForCloudProviderKind } from '@/utils'
 import CloudProfile from '@/components/CloudProfile'
 import cloneDeep from 'lodash/cloneDeep'
 import get from 'lodash/get'
@@ -91,6 +110,9 @@ const validationErrors = {
     maxLength: 'It exceeds the maximum length of 128 characters.',
     resourceName: 'Please use only lowercase alphanumeric characters and hyphen',
     unique: 'Name is taken. Try another.'
+  },
+  secretTypes: {
+    required: 'You need to select at least one type'
   }
 }
 
@@ -136,7 +158,8 @@ export default {
       errorMessage: undefined,
       detailedErrorMessage: undefined,
       validationErrors,
-      helpVisible: false
+      helpVisible: false,
+      secretTypes: undefined
     }
   },
   validations () {
@@ -164,6 +187,9 @@ export default {
     cloudProfiles () {
       return sortBy(this.cloudProfilesByCloudProviderKind(this.cloudProviderKind), [(item) => item.metadata.name])
     },
+    secretTypeItems () {
+      return suppportedSecretTypesForCloudProviderKind(this.cloudProviderKind)
+    },
     visible: {
       get () {
         return this.value
@@ -180,7 +206,11 @@ export default {
       return isCloudProfileValid && this.dataValid && this.isValid(this)
     },
     validators () {
-      const validators = {}
+      const validators = {
+        secretTypes: {
+          required
+        }
+      }
       if (this.isCreateMode) {
         validators.name = {
           required,
@@ -275,12 +305,14 @@ export default {
             namespace: this.namespace
           },
           cloudProviderKind: this.cloudProviderKind,
-          cloudProfileName: this.cloudProfileName
+          cloudProfileName: this.cloudProfileName,
+          secretTypes: this.secretTypes
         }
 
         return this.createInfrastructureSecret({ metadata, data: this.data })
       } else {
         const metadata = cloneDeep(this.secret.metadata)
+        metadata.secretTypes = this.secretTypes
 
         return this.updateInfrastructureSecret({ metadata, data: this.data })
       }
@@ -292,9 +324,6 @@ export default {
         cloudProfileRef.$v.$reset()
       }
 
-      this.accessKeyId = ''
-      this.secretAccessKey = ''
-
       if (this.isCreateMode) {
         this.name = `my-${this.cloudProviderKind}-secret`
 
@@ -304,11 +333,15 @@ export default {
           this.cloudProfileName = undefined
         }
 
+        this.secretTypes = [head(this.secretTypeItems)]
+
         setDelayedInputFocus(this, 'name')
+        this.$v.name.$touch()
       } else {
-        this.name = get(this.secret, 'metadata.name')
-        this.cloudProfileName = get(this.secret, 'metadata.cloudProfileName')
-        setDelayedInputFocus(this, 'accessKeyId')
+        const metadata = cloneDeep(this.secret.metadata)
+        this.name = metadata.name
+        this.secretTypes = metadata.secretTypes
+        this.cloudProfileName = metadata.cloudProfileName
       }
 
       this.errorMessage = undefined
